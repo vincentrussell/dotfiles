@@ -1,5 +1,11 @@
 source ~/.git-completion.bash
-source /opt/cloud-install/cloud-install-bash-include.sh
+#source /opt/cloud-install/cloud-install-bash-include.sh
+
+export DOCKER_HOST=tcp://192.168.99.100:2376
+export DOCKER_MACHINE_NAME=default
+export DOCKER_TLS_VERIFY=1
+export DOCKER_CERT_PATH=/Users/vrussell/.docker/machine/machines/default
+
 
 # The # sign notes that the line is a comment
 # v 0.3.2m # I always version to make sure I am not overwriting files.
@@ -101,7 +107,7 @@ export PYTHONSTARTUP=~/.pythonrc
 # PATH is a variable that is tricky. You probably shouldn't use this version but the following:
 # export PATH=$PATH
 # you can add other paths to this by using the colon notation seen below.
-export PATH=$PATH:/bin:/sbin:/usr/X11/bin:/usr/X11R6/bin:/opt/bin:/opt/local/bin:/usr/local/bin:/usr/bin:/usr/sbin:/Developer/usr/bin:/Applications/matlab/bin:/usr/local/git/bin
+export PATH=$PATH:~/.homebrew/bin:/usr/local/sbin:~/.rvm/bin:/bin:/sbin:/usr/X11/bin:/usr/X11R6/bin:/opt/bin:/opt/local/bin:/usr/local/bin:/usr/bin:/usr/sbin:/Developer/usr/bin:/Applications/matlab/bin:/usr/local/git/bin
 
 # Aliases for my sanity
 # these let me type the alias instead of the entire command for common commands
@@ -109,6 +115,8 @@ export PATH=$PATH:/bin:/sbin:/usr/X11/bin:/usr/X11R6/bin:/opt/bin:/opt/local/bin
 alias app='open -a' # usage: 'app itunes' will open itunes, mac only
 alias current='cd ~/sandbox/codeproject/current_branch/; pwd'
 alias data='cd /repo/data/; pwd; ls'
+alias fix-cam='sudo killall VDCAssistant'
+alias flatten-sub-dir='find ./ -mindepth 2 -type f -exec mv '{}' . \; find . ! -path . -type d | xargs -0 rm -rf'
 
 # common/overloaded util names
 # I do this because i want these programs to always run in these modes
@@ -161,6 +169,7 @@ alias explore="open ."
 alias wget='wget -c'
 alias winmerge='opendiff'
 alias mvn-install='mvn -DskipTests=true install'
+alias mvn-install-debug='MAVEN_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005" mvn -DskipTests=true install'
 alias cached='git diff --cached'
 
 alias mvn-install='mvn -Dinvoker.skip=true -DskipTests=true clean install'
@@ -241,19 +250,83 @@ extract () {
    fi
 }
 
+function hosts-unprotect() {
+    echo "Don't do it!!!!!!  It's not worth it!!"
+	sudo mv /etc/hosts /etc/hosts.bak
+}
+
+function hosts-protect() {
+	sudo mv /etc/hosts.bak /etc/hosts
+}
+
+function fap-diff-time() {
+	start=$(date -j -f "%b %d %Y %T" "Dec 18 2016 9:00:00" "+%s")	
+	end=$(date +%s);
+	#echo $((end-start)) | awk '{print int($1/60)":"int($1%60)}'
+	days=`echo $((end-start)) | awk '{print int($1/(60*60*24))}'`
+	echo "$days days since last PMO!  Keep up the good work!"
+}
+
+function wav-mp3() {
+     while (( "$#" )); do 
+        destinationName="`basename "$1" .mkv`.mp4"
+        lame --replaygain-accurate -q 0 --vbr-new -V 3 "$1" "$destinationName"
+        rm -f $1
+        shift	
+      done
+}
+
+function mkv-mp4() {
+    while (( "$#" )); do  
+        destinationName="`basename "$1" .mkv`.mp4"
+	ffmpeg -i "$1" -acodec mp3 -codec copy "$destinationName"
+        rm -f $1 	
+        shift
+    done
+}
+
+function mk4-mkv() {
+    while (( "$#" )); do    
+        destinationName="`basename "$1" .mkv`.mp4"
+	ffmpeg -i $1 -vcodec ffv1 -acodec pcm_s16le $destinationName
+        rm -f $1
+        shift
+    done	
+}
+
+ 
+function avi-mp4() {
+        destinationName="`basename "$1" .avi`.mp4"
+        ffmpeg -i "$1" -c:v libx264 -pix_fmt yuv420p "$destinationName"	
+}
+
+function rtmp-mp4() {
+        timestamp=$(date +%s)
+        fileName="$2" 
+	if [ -z "$fileName" ] 
+	then
+		fileName="$timestamp.mp4"
+	fi        
+	ffmpeg -i "$1" -vcodec copy -acodec copy "$fileName"	
+}
+
+
+
+
+#fap-diff-time
 
 #-----------------------------------
 # File & strings related functions:
 #-----------------------------------
 function find-wildcard() { find . -name '*'$1'*' ; }                 # find a file
 function find-fullpath() { find `pwd` -name '*'$1'*' ; }                 # find a file and display fullpath
-function find-exec() { find . -name '*'$1'*' -exec $2 {} \; ; }  # find a file and run $2 on it
+function find-exec() { find . -name '*'$1'*' -exec $2 {} \; ; }  # find a file and run $2 on it 
 function grep-jar() {
 	find . -iname "*.jar" | while read fname; do jar tf $fname | grep -i "$1" && echo $fname; done
 }
 function find-cd() {
 	filename=$(find . -name '*'$1'*' | sed 1q)
-
+	
 	if [ -n "$filename" ]; then
 
 		dirname=$(dirname $filename)
@@ -305,6 +378,10 @@ local pattern=$1
 	egrep --color=auto "$pattern|$" $@
 }
 
+function backup-home() {
+  sudo rsync -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --delete --exclude ".Trash" --exclude "Downloads" --exclude "VirtualBox VMs" --exclude "Library/Application Support" --no-p --no-g --chmod=ugo=rwX -arvz /Users/vrussell admin@DiskStation:/volume1/backup/
+}
+
 function copy-ssh-public-key() {
 	KEY="$HOME/.ssh/id_rsa.pub"
 	if [ ! -f $KEY ];then
@@ -347,14 +424,26 @@ export MAVEN_HOME=~/Library/Dependencies/apache-maven-3.2.1
 export GRAILS_HOME=~/Library/Dependencies/grails-1.3.7.1
 export GROOVY_HOME=~/Library/Dependencies/groovy-2.1.7
 #export JAVA_HOME=/usr/java/latest
-export JAVA_HOME="$(/usr/libexec/java_home -v 1.7)"
+#export JAVA_HOME="$(/usr/libexec/java_home -v 1.7)"
+export JAVA_HOME="$(/usr/libexec/java_home -v 1.8)"
 export HADOOP_HOME=/Users/vrussell/Libraries/Dependencies/hadoop-2.0.0-cdh4.6.0
 export ZOOKEEPER_HOME=/Users/vrussell/Libraries/Dependencies/zookeeper-3.4.5-cdh4.6.0
 
 #export MAVEN_OPTS="-Xdebug -Xnoagent -Djava.compiler=NONE -Xrunjdwp:transport=dt_socket,address=8786,server=y,suspend=n"
 
-export MAVEN_OPTS="-Djavax.net.ssl.trustStore=/Users/vrussell/.m2/devforce.jks -Djavax.net.ssl.trustStorePassword=changeit -Xmx512m -XX:MaxPermSize=128m"
+export MAVEN_OPTS="-Xmx512m -XX:MaxPermSize=128m"
 
-export PATH=$PATH:~/bin:$JAVA_HOME/bin:$PATH:$ANT_HOME/bin:$MAVEN_HOME/bin:$GRAILS_HOME/bin:$GROOVY_HOME/bin
+export PATH=$JAVA_HOME/bin:~/bin:$PATH:$ANT_HOME/bin:$MAVEN_HOME/bin:$GRAILS_HOME/bin:$GROOVY_HOME/bin
 
-PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+export PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+
+export CVSROOT=:pserver:vrussell@192.168.1.4:/srv/cvsroot
+
+
+function mvn-debug() {
+   MAVEN_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005" mvn $@
+}
+
+function mvn-debug-suspend() {
+   MAVEN_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005" mvn $@
+}
