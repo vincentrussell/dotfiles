@@ -116,7 +116,7 @@ alias app='open -a' # usage: 'app itunes' will open itunes, mac only
 alias current='cd ~/sandbox/codeproject/current_branch/; pwd'
 alias data='cd /repo/data/; pwd; ls'
 alias fix-cam='sudo killall VDCAssistant'
-alias flatten-sub-dir='find ./ -mindepth 2 -type f -exec mv '{}' . \; find . ! -path . -type d | xargs -0 rm -rf'
+alias flatten-sub-dir='find ./ -mindepth 2 -type f -exec mv '{}' . \;'
 
 # common/overloaded util names
 # I do this because i want these programs to always run in these modes
@@ -128,6 +128,8 @@ alias unmount='hdiutil unmount' # usage: 'unmount disk3s1' will unmount disk3s1
 alias mount-iso='hdiutil mount'
 alias ip='ipconfig getifaddr en0'
 alias sys_prefs='open -a System\ Preferences'
+alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
+alias macdown='/Applications/MacDown.app/Contents/MacOS/MacDown'
 
 ## Moving around & all that jazz
 alias back='cd "$OLDPWD"'
@@ -168,7 +170,8 @@ alias folders="find . -maxdepth 1 -type d -print | xargs du -sk | sort -rn"
 alias explore="open ."
 alias wget='wget -c'
 alias winmerge='opendiff'
-alias mvn-install='mvn -DskipTests=true install'
+alias mvn-install='mvn -DskipTests=true -Dmaven.test.skip.true install'
+alias mvn-install-no-tests='mvn -DskipTests=true -DskipITs -Dmaven.test.skip.true install'
 alias mvn-install-debug='MAVEN_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005" mvn -DskipTests=true install'
 alias cached='git diff --cached'
 
@@ -198,6 +201,42 @@ function lsd {
 
 function path() {
     echo $(cd $(dirname "$1") && pwd -P)/$(basename "$1")
+}
+
+function rip-video() {
+    foundUrl=$(youtube-dl -g "$1")
+    if [[ ! -z $foundUrl ]]; then    
+        echo "Found url: $foundUrl"
+    	echo "What would you like to name this file (without extension)?"
+    	read fileName
+    	echo "using filename $fileName"
+    	you-get -O "$fileName" "$foundUrl"
+    	
+    	if [[ ! -f $fileName ]]; then
+    	   fileName="$fileName.mp4"
+    	fi
+    	
+    	#if [[ ! -f $fileName ]]; then
+    	#   echo "try to get this file using a referreral"
+    	#   read fileName
+    	#fi 
+    	
+    	fileSize=$(wc -c "$fileName" | tr -s ' ' | cut -d ' ' -f 2)
+    	
+    	if [[ ! "$fileSize" -gt 50000 ]]; then
+    	    echo "file is small ($fileSize)... just try to use ffmepg"
+    	    cat $fileName
+    	    rm -f "$fileName"
+    	    ffmpeg -i "$foundUrl" -bsf:a aac_adtstoasc -vcodec copy -c copy -crf 50 "$fileName"
+    	    return 0
+    	else
+    	    return 0   
+        fi
+    	
+    else
+    	echo "Could not find a video at that url" 
+    	return 1
+    fi
 }
 
 # More memorable version:
@@ -259,19 +298,12 @@ function hosts-protect() {
 	sudo mv /etc/hosts.bak /etc/hosts
 }
 
-function fap-diff-time() {
-	start=$(date -j -f "%b %d %Y %T" "Dec 18 2016 9:00:00" "+%s")	
-	end=$(date +%s);
-	#echo $((end-start)) | awk '{print int($1/60)":"int($1%60)}'
-	days=`echo $((end-start)) | awk '{print int($1/(60*60*24))}'`
-	echo "$days days since last PMO!  Keep up the good work!"
-}
 
 function wav-mp3() {
      while (( "$#" )); do 
         destinationName="`basename "$1" .mkv`.mp4"
         lame --replaygain-accurate -q 0 --vbr-new -V 3 "$1" "$destinationName"
-        rm -f $1
+        rm -f "$1"
         shift	
       done
 }
@@ -280,16 +312,97 @@ function mkv-mp4() {
     while (( "$#" )); do  
         destinationName="`basename "$1" .mkv`.mp4"
 	ffmpeg -i "$1" -acodec mp3 -codec copy "$destinationName"
-        rm -f $1 	
+        rm -f "$1" 	
         shift
     done
+}
+
+function mp4-mp3() {
+    while (( "$#" )); do  
+        destinationName="`basename "$1" .mp4`.mp3"
+	ffmpeg -i "$1" -q:a 0 -map a "$destinationName"
+        rm -f "$1" 	
+        shift
+    done
+}
+
+
+function cat-mp4() {
+    current_time=$(date "+%Y.%m.%d-%H.%M.%S")
+    listFile="$current_time.txt"
+    echo "creating list file $listFile"
+    touch $listFile
+    COUNTER=1
+    DELETE_ARRAY=()
+    for var in "$@"
+	do
+	echo $var
+	#fileName=$(echo $var | sed -E 's| |\\ |g')
+	mv "$var" "$COUNTER.$current_time"
+	DELETE_ARRAY+=("$COUNTER.$current_time")
+    	echo "file '$COUNTER.$current_time'" >>  $listFile
+    	let COUNTER=COUNTER+1
+    done
+    echo "What would you like to name this file?"
+    read fileName
+    echo "using filename $fileName"
+    cat "$listFile"
+    ffmpeg -f concat -safe 0 -i "$listFile" -c copy "$fileName"
+    rm -f $listFile
+    for i in "${DELETE_ARRAY[@]}"
+    do
+     :
+      echo "deleting $i" 
+      rm -f $i
+    done
+}
+
+function shrink-video() {
+    while (( "$#" )); do
+        filename=$(basename -- "$1")
+        extension="${filename##*.}"
+        filename="${filename%.*}"
+        destinationname="${filename}_sm.${extension}"
+        echo "writing to ${destinationname}"
+        ffmpeg -i "$1" -vf "scale=iw/2:ih/2" "$destinationname"
+        rm -f "$1"
+        shift
+    done
+}
+
+
+function mp4-mkv() {
+    while (( "$#" )); do  
+        destinationName="`basename "$1" .mp4`.mkv"
+        ffmpeg -i "$1" -vcodec copy -acodec copy "$destinationName"
+        rm -f "$1" 	
+        shift
+    done
+}
+
+
+function mp4-lowerquality() {
+    while (( "$#" )); do  
+        destinationName="`basename "$1" .mp4`.lower.mp4"
+        ffmpeg -i "$1" -vcodec libx265 -crf 20 "$destinationName"	
+        shift
+    done
+}
+
+
+
+function get-m3u8() {
+    url=$1
+    filename=$2
+    filename=${filename:-video.mp4}
+    ffmpeg -i "$url" -c copy -bsf:a aac_adtstoasc "$filename"
 }
 
 function mk4-mkv() {
     while (( "$#" )); do    
         destinationName="`basename "$1" .mkv`.mp4"
-	ffmpeg -i $1 -vcodec ffv1 -acodec pcm_s16le $destinationName
-        rm -f $1
+	ffmpeg -i "$1" -vcodec ffv1 -acodec pcm_s16le "$destinationName"
+        rm -f "$1"
         shift
     done	
 }
@@ -382,6 +495,13 @@ function backup-home() {
   sudo rsync -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --delete --exclude ".Trash" --exclude "Downloads" --exclude "VirtualBox VMs" --exclude "Library/Application Support" --no-p --no-g --chmod=ugo=rwX -arvz /Users/vrussell admin@DiskStation:/volume1/backup/
 }
 
+function backup-screenshots() {
+  scp ~/Desktop/Screen\ Shot\ * admin@nas:/volume1/backup/Untitled/hidden/other/screenshots
+  if [[ $? == 0 ]]; then
+  	rm -f ~/Desktop/Screen\ Shot\ *
+  fi  
+}
+
 function copy-ssh-public-key() {
 	KEY="$HOME/.ssh/id_rsa.pub"
 	if [ ! -f $KEY ];then
@@ -420,7 +540,7 @@ dirsize () {
 
 
 export ANT_HOME=~/Library/Dependencies/apache-ant-1.8.4
-export MAVEN_HOME=~/Library/Dependencies/apache-maven-3.2.1
+export MAVEN_HOME=~/Library/Dependencies/apache-maven-3.5.2
 export GRAILS_HOME=~/Library/Dependencies/grails-1.3.7.1
 export GROOVY_HOME=~/Library/Dependencies/groovy-2.1.7
 #export JAVA_HOME=/usr/java/latest
@@ -436,6 +556,8 @@ export MAVEN_OPTS="-Xmx512m -XX:MaxPermSize=128m"
 export PATH=$JAVA_HOME/bin:~/bin:$PATH:$ANT_HOME/bin:$MAVEN_HOME/bin:$GRAILS_HOME/bin:$GROOVY_HOME/bin
 
 export PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+
+export PATH="/usr/local/bin:$PATH"
 
 export CVSROOT=:pserver:vrussell@192.168.1.4:/srv/cvsroot
 
